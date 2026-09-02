@@ -2,35 +2,158 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>ESP32 Servo Steuerung</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 2-Achsen Servo Joystick</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; max-width: 400px; margin: auto; }
-    .control { margin-bottom: 20px; }
-    label { display: block; margin-bottom: 5px; }
-    input[type=range] { width: 100%; }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #1e1e1e;
+      color: #fff;
+      margin: 0;
+      padding: 20px;
+      user-select: none;
+    }
+    .input-box {
+      margin-bottom: 20px;
+    }
+    input {
+      padding: 8px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: none;
+      text-align: center;
+    }
+    #joystick-container {
+      position: relative;
+      width: 250px;
+      height: 250px;
+      background: #333;
+      border-radius: 50%;
+      margin: 20px auto;
+      touch-action: none;
+      border: 4px solid #555;
+    }
+    #joystick-knob {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      background: #007bff;
+      border-radius: 50%;
+      top: 95px;
+      left: 95px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    .info {
+      font-size: 18px;
+      margin-top: 15px;
+    }
   </style>
 </head>
 <body>
-  <h2>Servo Steuerung</h2>
-  
-  <div class="control">
-    <label for="ip">ESP32 IP-Adresse:</label>
-    <input type="text" id="ip" placeholder="z.B. 192.168.1.50">
+
+  <h2>Servo Joystick Steuerung</h2>
+
+  <div class="input-box">
+    <label for="ip">ESP32 IP-Adresse:</label><br><br>
+    <input type="text" id="ip" placeholder="192.168.x.x">
   </div>
 
-  <div class="control">
-    <label for="servo0">Servo 0 Angle: <span id="val0">90</span>°</label>
-    <input type="range" id="servo0" min="0" max="180" value="90" oninput="sendServo(0, this.value)">
+  <div id="joystick-container">
+    <div id="joystick-knob"></div>
+  </div>
+
+  <div class="info">
+    <p>Horizontal (Servo 0): <span id="valX">90</span>°</p>
+    <p>Vertikal (Servo 1): <span id="valY">90</span>°</p>
   </div>
 
   <script>
-    function sendServo(num, angle) {
-      document.getElementById('val' + num).innerText = angle;
+    const container = document.getElementById('joystick-container');
+    const knob = document.getElementById('joystick-knob');
+    const valX = document.getElementById('valX');
+    const valY = document.getElementById('valY');
+    
+    let isDragging = false;
+    let lastSendTime = 0;
+
+    const maxRadius = 95; // Radius des Bereichs
+    const centerX = 125;  // Mittelpunkt X (250/2)
+    const centerY = 125;  // Mittelpunkt Y (250/2)
+
+    // Touch- & Maus-Events registrieren
+    container.addEventListener('mousedown', startDrag);
+    document.addEventListener('mousemove', moveDrag);
+    document.addEventListener('mouseup', endDrag);
+
+    container.addEventListener('touchstart', startDrag);
+    document.addEventListener('touchmove', moveDrag);
+    document.addEventListener('touchend', endDrag);
+
+    function startDrag(e) {
+      isDragging = true;
+      moveDrag(e);
+    }
+
+    function moveDrag(e) {
+      if (!isDragging) return;
+
+      const rect = container.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      let dx = clientX - rect.left - centerX;
+      let dy = clientY - rect.top - centerY;
+
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      // Begrenzung auf den Kreisradius
+      if (distance > maxRadius) {
+        dx = (dx / distance) * maxRadius;
+        dy = (dy / distance) * maxRadius;
+      }
+
+      // Knob-Position auf dem Screen aktualisieren
+      knob.style.left = `${centerX + dx - 30}px`;
+      knob.style.top = `${centerY + dy - 30}px`;
+
+      // Umrechnung der Joystick-Position (-95 bis +95) in Servo-Winkel (0 bis 180 Grad)
+      let angleX = Math.round(((dx + maxRadius) / (2 * maxRadius)) * 180);
+      
+      // Y-Achse umkehren (oben = 180°, unten = 0°)
+      let angleY = Math.round(((-dy + maxRadius) / (2 * maxRadius)) * 180);
+
+      valX.innerText = angleX;
+      valY.innerText = angleY;
+
+      // Sende-Intervall begrenzen (alle 100ms max 1 Befehl, um den ESP32 nicht zu überlasten)
+      const now = Date.now();
+      if (now - lastSendTime > 100) {
+        sendServoData(angleX, angleY);
+        lastSendTime = now;
+      }
+    }
+
+    function endDrag() {
+      if (!isDragging) return;
+      isDragging = false;
+
+      // Optional: Knob zurück in die Mitte setzen
+      knob.style.left = `95px`;
+      knob.style.top = `95px`;
+      valX.innerText = 90;
+      valY.innerText = 90;
+      
+      sendServoData(90, 90);
+    }
+
+    function sendServoData(angleX, angleY) {
       const ip = document.getElementById('ip').value;
       if (!ip) return;
-      
-      fetch(`http://${ip}/setServo?num=${num}&angle=${angle}`)
-        .catch(err => console.error("Fehler beim Senden:", err));
+
+      // Sende Befehle für beide Servos kurz hintereinander
+      fetch(`http://${ip}/setServo?num=0&angle=${angleX}`).catch(() => {});
+      fetch(`http://${ip}/setServo?num=1&angle=${angleY}`).catch(() => {});
     }
   </script>
 </body>
