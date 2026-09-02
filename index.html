@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 Robot Dashboard</title>
+  <title>ESP32 Robot Controller & Chat</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -19,12 +19,12 @@
       border-radius: 12px;
       padding: 15px;
       margin: 15px auto;
-      max-width: 400px;
+      max-width: 420px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
     input[type="text"], input[type="number"] {
-      padding: 8px;
-      font-size: 16px;
+      padding: 10px;
+      font-size: 15px;
       border-radius: 6px;
       border: 1px solid #444;
       background: #2a2a2a;
@@ -32,10 +32,59 @@
       text-align: center;
     }
     input[type="number"] { width: 60px; }
+    
+    /* Chat Styling */
+    #chat-box {
+      height: 180px;
+      overflow-y: auto;
+      background: #2a2a2a;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: left;
+      margin-bottom: 10px;
+      border: 1px solid #444;
+    }
+    .msg {
+      margin: 5px 0;
+      padding: 8px 12px;
+      border-radius: 8px;
+      max-width: 80%;
+      word-wrap: break-word;
+    }
+    .user-msg {
+      background: #007bff;
+      color: white;
+      margin-left: auto;
+    }
+    .bot-msg {
+      background: #3a3a3a;
+      color: white;
+      margin-right: auto;
+    }
+    .chat-input-container {
+      display: flex;
+      gap: 10px;
+    }
+    .chat-input-container input {
+      flex-grow: 1;
+      text-align: left;
+    }
+    button {
+      padding: 10px 16px;
+      font-size: 15px;
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background: #218838; }
+
+    /* Joystick Styling */
     #joystick-container {
       position: relative;
-      width: 220px;
-      height: 220px;
+      width: 200px;
+      height: 200px;
       background: #2a2a2a;
       border-radius: 50%;
       margin: 15px auto;
@@ -44,21 +93,21 @@
     }
     #joystick-knob {
       position: absolute;
-      width: 50px;
-      height: 50px;
+      width: 45px;
+      height: 45px;
       background: #007bff;
       border-radius: 50%;
-      top: 85px;
-      left: 85px;
+      top: 77px;
+      left: 77px;
       box-shadow: 0 0 8px rgba(0,0,0,0.6);
     }
     .servo-control {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin: 10px 0;
+      margin: 8px 0;
       background: #2a2a2a;
-      padding: 10px;
+      padding: 8px 12px;
       border-radius: 8px;
     }
     .servo-control label { font-weight: bold; width: 70px; text-align: left; }
@@ -67,22 +116,37 @@
 </head>
 <body>
 
-  <h2>Robot Controller</h2>
+  <h2>Robot Dashboard</h2>
 
+  <!-- Verbindung & Hosts -->
   <div class="card">
-    <label for="host">ESP32 Host/IP:</label><br><br>
-    <input type="text" id="host" value="esp32-servos.local">
+    <label>Servo ESP32 Host:</label><br>
+    <input type="text" id="hostServo" value="esp32-servos.local" style="width: 80%; margin-top: 5px;"><br><br>
+    <label>Display ESP32 Host:</label><br>
+    <input type="text" id="hostDisplay" value="esp32-display.local" style="width: 80%; margin-top: 5px;">
   </div>
 
+  <!-- Chat / Text I/O -->
   <div class="card">
-    <h3>2D Joystick (Servo 0 & 1)</h3>
+    <h3>Gemini Chat</h3>
+    <div id="chat-box"></div>
+    <div class="chat-input-container">
+      <input type="text" id="chatInput" placeholder="Sende eine Nachricht..." onkeypress="handleKeyPress(event)">
+      <button onclick="sendMessage()">Senden</button>
+    </div>
+  </div>
+
+  <!-- 2D Joystick -->
+  <div class="card">
+    <h3>2D Joystick</h3>
     <div id="joystick-container">
       <div id="joystick-knob"></div>
     </div>
   </div>
 
+  <!-- Servo Feineinstellung -->
   <div class="card">
-    <h3>Feineinstellung</h3>
+    <h3>Servo Einstellungen</h3>
     
     <div class="servo-control">
       <label>Servo 0</label>
@@ -98,14 +162,53 @@
   </div>
 
   <script>
+    // --- Chat Logik ---
+    function handleKeyPress(e) {
+      if (e.key === 'Enter') sendMessage();
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      const hostDisplay = document.getElementById('hostDisplay').value;
+
+      if (!text) return;
+
+      appendMessage(text, 'user-msg');
+      input.value = '';
+
+      // Sende den Text an den Display-ESP32
+      fetch(`http://${hostDisplay}/chat?prompt=${encodeURIComponent(text)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.text) {
+            appendMessage(`[${data.emotion || 'happy'}] ${data.text}`, 'bot-msg');
+          }
+        })
+        .catch(err => {
+          console.error("Fehler beim Chatten:", err);
+          appendMessage("Fehler: Keine Antwort vom Display-ESP32 erhalten.", 'bot-msg');
+        });
+    }
+
+    function appendMessage(text, className) {
+      const chatBox = document.getElementById('chat-box');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `msg ${className}`;
+      msgDiv.innerText = text;
+      chatBox.appendChild(msgDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // --- Joystick & Servo Logik ---
     const container = document.getElementById('joystick-container');
     const knob = document.getElementById('joystick-knob');
     let isDragging = false;
     let lastSendTime = 0;
 
-    const maxRadius = 85; 
-    const centerX = 110;  
-    const centerY = 110;  
+    const maxRadius = 77; 
+    const centerX = 100;  
+    const centerY = 100;  
 
     container.addEventListener('mousedown', startDrag);
     document.addEventListener('mousemove', moveDrag);
@@ -133,8 +236,8 @@
         dy = (dy / distance) * maxRadius;
       }
 
-      knob.style.left = `${centerX + dx - 25}px`;
-      knob.style.top = `${centerY + dy - 25}px`;
+      knob.style.left = `${centerX + dx - 22}px`;
+      knob.style.top = `${centerY + dy - 22}px`;
 
       let angleX = Math.round(((dx + maxRadius) / (2 * maxRadius)) * 180);
       let angleY = Math.round(((-dy + maxRadius) / (2 * maxRadius)) * 180);
@@ -171,11 +274,11 @@
     }
 
     function sendServoData(num, angle) {
-      const host = document.getElementById('host').value;
+      const host = document.getElementById('hostServo').value;
       if (!host) return;
 
       fetch(`http://${host}/setServo?num=${num}&angle=${angle}`, { mode: 'no-cors' })
-        .catch(err => console.error("Fehler:", err));
+        .catch(err => console.error("Servo-Fehler:", err));
     }
   </script>
 </body>
