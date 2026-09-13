@@ -1,144 +1,64 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 Robot & Radio Dashboard</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #121212; color: #fff; margin: 0; padding: 20px; }
-    .card { background: #1e1e1e; border-radius: 12px; padding: 15px; margin: 15px auto; max-width: 420px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-    input[type="text"], input[type="number"] { padding: 10px; font-size: 15px; border-radius: 6px; border: 1px solid #444; background: #2a2a2a; color: #fff; text-align: center; }
-    button { padding: 12px; font-size: 15px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-    button.green { background: #28a745; }
-    .chat-input-container { display: flex; gap: 10px; }
-    .chat-input-container input { flex-grow: 1; text-align: left; }
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DeskAI Servo</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 560px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
 
-    #joystick-container { position: relative; width: 200px; height: 200px; background: #2a2a2a; border-radius: 50%; margin: 15px auto; border: 3px solid #444; touch-action: none; }
-    #joystick-knob { position: absolute; width: 45px; height: 45px; background: #007bff; border-radius: 50%; top: 77px; left: 77px; }
-    .servo-control { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; background: #2a2a2a; padding: 8px 12px; border-radius: 8px; }
-    .servo-control input[type="range"] { flex-grow: 1; margin: 0 10px; }
-  </style>
+        label,
+        input,
+        button {
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        input {
+            margin: .5rem 0 1rem;
+        }
+
+        button {
+            padding: .7rem;
+            margin: .4rem 0;
+            cursor: pointer;
+        }
+
+        output {
+            display: block;
+            margin-top: 1rem;
+        }
+    </style>
 </head>
+
 <body>
-
-  <h2>ESP32 Steuerung</h2>
-
-  <div class="card">
-    <label>ESP32 IP / Host:</label><br>
-    <input type="text" id="espHost" value="esp32-robot.local" style="width: 80%; margin-top: 5px;">
-  </div>
-
-  <div class="card">
-    <h3>Funkgerät (Ton senden)</h3>
-    <div class="chat-input-container">
-      <input type="text" id="radioInput" placeholder="Text/Signal zum Senden..." onkeypress="if(event.key==='Enter') sendRadioText()">
-      <button class="green" onclick="sendRadioText()">TX Senden</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3>2D Joystick (Servo 1 & 2)</h3>
-    <div id="joystick-container">
-      <div id="joystick-knob"></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3>Servo Einstellungen</h3>
-    <div class="servo-control">
-      <label>Servo 1</label>
-      <input type="range" id="slider0" min="0" max="180" value="90" oninput="updateFromSlider(0, this.value)">
-      <input type="number" id="num0" min="0" max="180" value="90" onchange="updateFromNum(0, this.value)"> °
-    </div>
-    <div class="servo-control">
-      <label>Servo 2</label>
-      <input type="range" id="slider1" min="0" max="180" value="90" oninput="updateFromSlider(1, this.value)">
-      <input type="number" id="num1" min="0" max="180" value="90" onchange="updateFromNum(1, this.value)"> °
-    </div>
-  </div>
-
-  <script>
-    function getHost() { return document.getElementById('espHost').value; }
-
-    function sendRadioText() {
-      const input = document.getElementById('radioInput');
-      const text = input.value.trim();
-      if (!text) return;
-
-      fetch(`http://${getHost()}/transmit?text=${encodeURIComponent(text)}`, { mode: 'no-cors' })
-        .then(() => { input.value = ''; })
-        .catch(err => console.error("TX Fehler:", err));
-    }
-
-    // Joystick & Servos
-    const container = document.getElementById('joystick-container');
-    const knob = document.getElementById('joystick-knob');
-    let isDragging = false, lastSendTime = 0;
-    const maxRadius = 77, centerX = 100, centerY = 100;
-
-    container.addEventListener('mousedown', startDrag);
-    document.addEventListener('mousemove', moveDrag);
-    document.addEventListener('mouseup', endDrag);
-
-    container.addEventListener('touchstart', startDrag);
-    document.addEventListener('touchmove', moveDrag);
-    document.addEventListener('touchend', endDrag);
-
-    function startDrag(e) { isDragging = true; moveDrag(e); }
-
-    function moveDrag(e) {
-      if (!isDragging) return;
-      const rect = container.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-      let dx = clientX - rect.left - centerX;
-      let dy = clientY - rect.top - centerY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance > maxRadius) {
-        dx = (dx / distance) * maxRadius;
-        dy = (dy / distance) * maxRadius;
-      }
-
-      knob.style.left = `${centerX + dx - 22}px`;
-      knob.style.top = `${centerY + dy - 22}px`;
-
-      let angleX = Math.round(((dx + maxRadius) / (2 * maxRadius)) * 180);
-      let angleY = Math.round(((-dy + maxRadius) / (2 * maxRadius)) * 180);
-
-      syncUI(0, angleX);
-      syncUI(1, angleY);
-
-      const now = Date.now();
-      if (now - lastSendTime > 80) { 
-        sendServoData(0, angleX);
-        sendServoData(1, angleY);
-        lastSendTime = now;
-      }
-    }
-
-    function endDrag() { isDragging = false; }
-
-    function updateFromSlider(servoNum, value) {
-      document.getElementById(`num${servoNum}`).value = value;
-      sendServoData(servoNum, value);
-    }
-
-    function updateFromNum(servoNum, value) {
-      document.getElementById(`slider${servoNum}`).value = value;
-      sendServoData(servoNum, value);
-    }
-
-    function syncUI(servoNum, value) {
-      document.getElementById(`slider${servoNum}`).value = value;
-      document.getElementById(`num${servoNum}`).value = value;
-    }
-
-    function sendServoData(num, angle) {
-      fetch(`http://${getHost()}/setServo?num=${num}&angle=${angle}`, { mode: 'no-cors' })
-        .catch(err => console.error("Servo Fehler:", err));
-    }
-  </script>
+    <h1>PCA9685 Servo</h1>
+    <label for="channel">Kanal (0-15)</label>
+    <input id="channel" type="number" min="0" max="15" value="0">
+    <label for="angle">Winkel: <output id="angleValue">90</output>&deg;</label>
+    <input id="angle" type="range" min="0" max="180" value="90">
+    <button id="send">Servo bewegen</button>
+    <output id="status">Bereit</output>
+    <script>
+        const channel = document.querySelector('#channel');
+        const angle = document.querySelector('#angle');
+        const angleValue = document.querySelector('#angleValue');
+        const status = document.querySelector('#status');
+        angle.addEventListener('input', () => { angleValue.value = angle.value; });
+        document.querySelector('#send').addEventListener('click', async () => {
+            status.textContent = 'Sende...';
+            const response = await fetch(`/api/servo?channel=${channel.value}&angle=${angle.value}`);
+            const result = await response.json();
+            status.textContent = response.ok ? `Kanal ${result.channel}: ${result.angle} Grad` : result.error;
+        });
+    </script>
 </body>
+
 </html>
